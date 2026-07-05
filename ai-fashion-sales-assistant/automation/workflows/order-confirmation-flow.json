@@ -1,0 +1,105 @@
+{
+  "name": "FashionHub - Order Confirmation Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "internal/order-confirm",
+        "responseMode": "lastNode"
+      },
+      "name": "Order Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "notes": "Triggered by backend when an order is created in MongoDB"
+    },
+    {
+      "parameters": {
+        "jsCode": "const order = $input.first().json;\n\nconst productList = order.products\n  .map(p => `• ${p.name} (${p.size}) x${p.qty} — Rs ${(p.price * p.qty).toLocaleString()}`)\n  .join('\\n');\n\nconst message =\n  `✅ *Order Confirmed!*\\n\\n` +\n  `📋 Order ID: *${order.orderId}*\\n` +\n  `👤 Name: ${order.customerName}\\n\\n` +\n  `🛍️ *Items:*\\n${productList}\\n\\n` +\n  `💰 Total: *Rs ${order.total.toLocaleString()}*\\n` +\n  `💳 Payment: ${order.paymentMethod}\\n` +\n  `📍 Deliver to: ${order.address}\\n\\n` +\n  `🚚 Expected delivery: 2-5 working days\\n\\n` +\n  `Thank you for shopping with *FashionHub* ❤️\\n` +\n  `Track your order: *Track ${order.orderId}*`;\n\nreturn [{ json: { phone: order.phone, instagramId: order.instagramId, message } }];"
+      },
+      "name": "Build Confirmation Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.phone }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ]
+        }
+      },
+      "name": "Has Phone?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.phone }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $json.message }}\" }\n}"
+      },
+      "name": "Send WhatsApp Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.INSTAGRAM_PAGE_ID }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "access_token", "value": "={{ $env.INSTAGRAM_ACCESS_TOKEN }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"recipient\": { \"id\": \"{{ $json.instagramId }}\" },\n  \"message\": { \"text\": \"{{ $json.message }}\" },\n  \"messaging_type\": \"RESPONSE\"\n}"
+      },
+      "name": "Send Instagram Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 400]
+    }
+  ],
+  "connections": {
+    "Order Trigger": {
+      "main": [[{ "node": "Build Confirmation Message", "type": "main", "index": 0 }]]
+    },
+    "Build Confirmation Message": {
+      "main": [[{ "node": "Has Phone?", "type": "main", "index": 0 }]]
+    },
+    "Has Phone?": {
+      "main": [
+        [{ "node": "Send WhatsApp Confirmation", "type": "main", "index": 0 }],
+        [{ "node": "Send Instagram Confirmation", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}
