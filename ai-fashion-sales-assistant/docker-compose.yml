@@ -1,0 +1,67 @@
+version: "3.8"
+
+services:
+  # ─── n8n Workflow Automation ────────────────────────────────────────────────
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: fashionhub-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # n8n base URL (update with your public URL / ngrok URL)
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+
+      # n8n security
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=fashionhub2024
+
+      # Timezone
+      - GENERIC_TIMEZONE=Asia/Karachi
+
+      # ── Your API keys exposed as n8n environment variables ────────────────
+      # These are accessible inside workflows as $env.VARIABLE_NAME
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - INSTAGRAM_ACCESS_TOKEN=${INSTAGRAM_ACCESS_TOKEN}
+      - INSTAGRAM_PAGE_ID=${INSTAGRAM_PAGE_ID}
+      - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
+      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
+
+      # Execution settings
+      - EXECUTIONS_PROCESS=main
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=last
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - fashionhub-net
+
+  # ─── Node.js Express Server (Webhook Forwarder) ─────────────────────────────
+  app:
+    build: .
+    container_name: fashionhub-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - N8N_BASE_URL=http://n8n:5678
+    depends_on:
+      - n8n
+    networks:
+      - fashionhub-net
+
+volumes:
+  n8n_data:
+    driver: local
+
+networks:
+  fashionhub-net:
+    driver: bridge

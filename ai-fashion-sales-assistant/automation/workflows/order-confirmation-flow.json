@@ -5,18 +5,22 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "internal/order-confirm",
-        "responseMode": "lastNode"
+        "responseMode": "lastNode",
+        "options": {}
       },
+      "id": "order-trigger-node",
       "name": "Order Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [240, 300],
-      "notes": "Triggered by backend when an order is created in MongoDB"
+      "webhookId": "order-confirmation-webhook",
+      "notes": "Triggered by Node.js backend when an order is placed"
     },
     {
       "parameters": {
-        "jsCode": "const order = $input.first().json;\n\nconst productList = order.products\n  .map(p => `• ${p.name} (${p.size}) x${p.qty} — Rs ${(p.price * p.qty).toLocaleString()}`)\n  .join('\\n');\n\nconst message =\n  `✅ *Order Confirmed!*\\n\\n` +\n  `📋 Order ID: *${order.orderId}*\\n` +\n  `👤 Name: ${order.customerName}\\n\\n` +\n  `🛍️ *Items:*\\n${productList}\\n\\n` +\n  `💰 Total: *Rs ${order.total.toLocaleString()}*\\n` +\n  `💳 Payment: ${order.paymentMethod}\\n` +\n  `📍 Deliver to: ${order.address}\\n\\n` +\n  `🚚 Expected delivery: 2-5 working days\\n\\n` +\n  `Thank you for shopping with *FashionHub* ❤️\\n` +\n  `Track your order: *Track ${order.orderId}*`;\n\nreturn [{ json: { phone: order.phone, instagramId: order.instagramId, message } }];"
+        "jsCode": "const order = $input.first().json;\n\nconst productList = (order.products || [])\n  .map(p => `• ${p.name} (${p.size}) x${p.qty} — Rs ${(p.price * p.qty).toLocaleString()}`)\n  .join('\\n');\n\nconst orderId = order.orderId || ('ORD-' + Date.now().toString().slice(-6));\n\nconst message =\n  `✅ *Order Confirmed!*\\n\\n` +\n  `📋 Order ID: *${orderId}*\\n` +\n  `👤 Name: ${order.customerName}\\n\\n` +\n  `🛍️ *Items:*\\n${productList}\\n\\n` +\n  `💰 Total: *Rs ${(order.total || 0).toLocaleString()}*\\n` +\n  `💳 Payment: ${order.paymentMethod}\\n` +\n  `📍 Deliver to: ${order.address}\\n\\n` +\n  `🚚 Expected delivery: 2-5 working days\\n\\n` +\n  `Thank you for shopping with *FashionHub* ❤️\\n` +\n  `Track your order: *Track ${orderId}*`;\n\nreturn [{ json: { phone: order.phone, instagramId: order.instagramId, message, orderId } }];"
       },
+      "id": "order-build-message",
       "name": "Build Confirmation Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -25,15 +29,19 @@
     {
       "parameters": {
         "conditions": {
+          "options": {},
           "conditions": [
             {
+              "id": "phone-check",
               "leftValue": "={{ $json.phone }}",
               "rightValue": "",
               "operator": { "type": "string", "operation": "notEmpty" }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
+      "id": "order-has-phone",
       "name": "Has Phone?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
@@ -41,9 +49,10 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -55,6 +64,7 @@
         "contentType": "json",
         "body": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.phone }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $json.message }}\" }\n}"
       },
+      "id": "order-send-whatsapp",
       "name": "Send WhatsApp Confirmation",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
@@ -62,9 +72,31 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "id": "instagram-check",
+              "leftValue": "={{ $json.instagramId }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "order-has-instagram",
+      "name": "Has Instagram ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.INSTAGRAM_PAGE_ID }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "url": "=https://graph.facebook.com/v19.0/{{ $env.INSTAGRAM_PAGE_ID }}/messages",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -81,10 +113,23 @@
         "contentType": "json",
         "body": "={\n  \"recipient\": { \"id\": \"{{ $json.instagramId }}\" },\n  \"message\": { \"text\": \"{{ $json.message }}\" },\n  \"messaging_type\": \"RESPONSE\"\n}"
       },
+      "id": "order-send-instagram",
       "name": "Send Instagram Confirmation",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [900, 400]
+      "position": [1120, 340]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": true, \"orderId\": \"{{ $('Build Confirmation Message').first().json.orderId }}\" }",
+        "options": {}
+      },
+      "id": "order-respond-ok",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 520]
     }
   ],
   "connections": {
@@ -97,9 +142,34 @@
     "Has Phone?": {
       "main": [
         [{ "node": "Send WhatsApp Confirmation", "type": "main", "index": 0 }],
-        [{ "node": "Send Instagram Confirmation", "type": "main", "index": 0 }]
+        [{ "node": "Has Instagram ID?", "type": "main", "index": 0 }]
       ]
+    },
+    "Send WhatsApp Confirmation": {
+      "main": [[{ "node": "Has Instagram ID?", "type": "main", "index": 0 }]]
+    },
+    "Has Instagram ID?": {
+      "main": [
+        [{ "node": "Send Instagram Confirmation", "type": "main", "index": 0 }],
+        [{ "node": "Respond Success", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Instagram Confirmation": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
     }
   },
-  "settings": { "executionOrder": "v1" }
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fashionhub"
+  },
+  "id": "fashionhub-order-confirmation-flow",
+  "tags": ["fashionhub", "orders", "confirmation"]
 }

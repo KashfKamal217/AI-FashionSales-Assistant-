@@ -19,4 +19,9 @@ module.exports = {
 
   // MongoDB
   MONGODB_URI: process.env.MONGODB_URI,
+
+  // n8n Integration
+  // All incoming webhooks are forwarded to n8n for processing
+  N8N_BASE_URL: process.env.N8N_BASE_URL || "http://localhost:5678",
+  N8N_WEBHOOK_URL: process.env.N8N_WEBHOOK_URL || "http://localhost:5678/webhook",
 };
