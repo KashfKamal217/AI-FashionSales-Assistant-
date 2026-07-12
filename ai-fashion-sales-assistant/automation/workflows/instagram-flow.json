@@ -5,27 +5,33 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "webhook/instagram",
-        "responseMode": "responseNode"
+        "responseMode": "responseNode",
+        "options": {}
       },
+      "id": "ig-webhook-node",
       "name": "Instagram Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 300]
+      "position": [240, 300],
+      "webhookId": "instagram-dm-webhook"
     },
     {
       "parameters": {
         "respondWith": "text",
-        "responseBody": "OK"
+        "responseBody": "OK",
+        "options": {}
       },
+      "id": "ig-respond-200",
       "name": "Respond 200",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [460, 200]
+      "position": [460, 180]
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body;\nconst entry = body?.entry?.[0];\nconst messagingEvent = entry?.messaging?.[0];\n\nif (!messagingEvent || messagingEvent.message?.is_echo) {\n  return [];\n}\n\nconst senderId = messagingEvent.sender?.id;\nconst text = messagingEvent.message?.text || messagingEvent.postback?.payload || '';\n\nif (!text) return [];\n\nreturn [{ json: { senderId, text } }];"
+        "jsCode": "const body = $input.first().json.body;\nconst entry = body?.entry?.[0];\nconst messagingEvent = entry?.messaging?.[0];\n\nif (!messagingEvent || messagingEvent.message?.is_echo) {\n  return [];\n}\n\nconst senderId = messagingEvent.sender?.id;\nconst text = messagingEvent.message?.text || messagingEvent.postback?.payload || '';\n\nif (!senderId || !text.trim()) return [];\n\nreturn [{ json: { senderId, text } }];"
       },
+      "id": "ig-extract-dm",
       "name": "Extract DM",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -37,13 +43,16 @@
           "options": { "caseSensitive": false },
           "conditions": [
             {
+              "id": "greeting-condition",
               "leftValue": "={{ $json.text }}",
-              "rightValue": "^(hi|hello|hey|salam)$",
+              "rightValue": "^(hi|hello|hey|salam|assalam|helo|hii+)$",
               "operator": { "type": "string", "operation": "regex" }
             }
-          ]
+          ],
+          "combinator": "and"
         }
       },
+      "id": "ig-is-greeting",
       "name": "Is Greeting?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
@@ -51,8 +60,9 @@
     },
     {
       "parameters": {
-        "jsCode": "return [{\n  json: {\n    senderId: $('Extract DM').first().json.senderId,\n    reply: 'Welcome to FashionHub ❤️\\n\\nThank you for contacting us!\\nHow may I help you today?\\n\\n1️⃣ New Arrivals\\n2️⃣ Women\\'s Collection\\n3️⃣ Men\\'s Collection\\n4️⃣ Order Tracking\\n5️⃣ Delivery Information'\n  }\n}];"
+        "jsCode": "return [{\n  json: {\n    senderId: $('Extract DM').first().json.senderId,\n    reply: 'Welcome to FashionHub ❤️\\n\\nThank you for contacting us!\\nHow may I help you today?\\n\\n1️⃣ New Arrivals\\n2️⃣ Women\\'s Collection\\n3️⃣ Men\\'s Collection\\n4️⃣ Order Tracking\\n5️⃣ Delivery Information\\n6️⃣ Exchange & Returns'\n  }\n}];"
       },
+      "id": "ig-welcome-reply",
       "name": "Welcome Reply",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -60,19 +70,22 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "url": "https://api.openai.com/v1/chat/completions",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" }
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENAI_API_KEY }}" }
           ]
         },
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"model\": \"gpt-3.5-turbo\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a professional AI Sales Assistant for FashionHub Pakistan. Be warm, use emojis, reply concisely. Support English and Urdu.\"\n    },\n    { \"role\": \"user\", \"content\": \"{{ $json.text }}\" }\n  ],\n  \"max_tokens\": 300\n}"
+        "body": "={\n  \"model\": \"gpt-3.5-turbo\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a professional AI Sales Assistant for FashionHub, a premium clothing brand in Pakistan. Help customers with product recommendations, orders, delivery info, and after-sales support. Be warm, friendly, use emojis. Reply in the customer's language (English or Urdu/Roman Urdu). Keep responses concise. Prices are in Pakistani Rupees (Rs).\"\n    },\n    { \"role\": \"user\", \"content\": \"={{ $json.text }}\" }\n  ],\n  \"max_tokens\": 300,\n  \"temperature\": 0.7\n}"
       },
+      "id": "ig-openai-reply",
       "name": "OpenAI Reply",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
@@ -80,8 +93,9 @@
     },
     {
       "parameters": {
-        "jsCode": "return [{\n  json: {\n    senderId: $('Extract DM').first().json.senderId,\n    reply: $input.first().json.choices[0].message.content\n  }\n}];"
+        "jsCode": "const aiText = $input.first().json.choices?.[0]?.message?.content;\nif (!aiText) return [];\n\nreturn [{\n  json: {\n    senderId: $('Extract DM').first().json.senderId,\n    reply: aiText.trim()\n  }\n}];"
       },
+      "id": "ig-prepare-ai-reply",
       "name": "Prepare AI Reply",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -89,9 +103,10 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.INSTAGRAM_PAGE_ID }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "url": "=https://graph.facebook.com/v19.0/{{ $env.INSTAGRAM_PAGE_ID }}/messages",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -108,6 +123,7 @@
         "contentType": "json",
         "body": "={\n  \"recipient\": { \"id\": \"{{ $json.senderId }}\" },\n  \"message\": { \"text\": \"{{ $json.reply }}\" },\n  \"messaging_type\": \"RESPONSE\"\n}"
       },
+      "id": "ig-send-reply",
       "name": "Send Instagram Reply",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
@@ -142,5 +158,18 @@
       "main": [[{ "node": "Send Instagram Reply", "type": "main", "index": 0 }]]
     }
   },
-  "settings": { "executionOrder": "v1" }
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fashionhub"
+  },
+  "id": "fashionhub-instagram-flow",
+  "tags": ["fashionhub", "instagram", "ai"]
 }

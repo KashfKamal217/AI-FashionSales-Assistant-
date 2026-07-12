@@ -5,27 +5,33 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "webhook/whatsapp",
-        "responseMode": "responseNode"
+        "responseMode": "responseNode",
+        "options": {}
       },
+      "id": "wa-webhook-node",
       "name": "WhatsApp Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 300]
+      "position": [240, 300],
+      "webhookId": "whatsapp-message-webhook"
     },
     {
       "parameters": {
         "respondWith": "text",
-        "responseBody": "OK"
+        "responseBody": "OK",
+        "options": {}
       },
+      "id": "wa-respond-200",
       "name": "Respond 200",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [460, 200]
+      "position": [460, 180]
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body;\nconst entry = body?.entry?.[0];\nconst value = entry?.changes?.[0]?.value;\nconst message = value?.messages?.[0];\n\nif (!message || message.type !== 'text') {\n  return [];\n}\n\nreturn [{\n  json: {\n    from: message.from,\n    messageId: message.id,\n    text: message.text.body,\n    timestamp: message.timestamp\n  }\n}];"
+        "jsCode": "const body = $input.first().json.body;\nconst entry = body?.entry?.[0];\nconst value = entry?.changes?.[0]?.value;\nconst message = value?.messages?.[0];\n\nif (!message) return [];\n\nlet text = '';\nif (message.type === 'text') {\n  text = message.text?.body || '';\n} else if (message.type === 'interactive') {\n  text = message.interactive?.button_reply?.title ||\n         message.interactive?.list_reply?.title || '';\n}\n\nif (!text.trim()) return [];\n\nreturn [{\n  json: {\n    from: message.from,\n    messageId: message.id,\n    text: text.trim(),\n    timestamp: message.timestamp\n  }\n}];"
       },
+      "id": "wa-extract-message",
       "name": "Extract Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -33,38 +39,66 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "url": "https://api.openai.com/v1/chat/completions",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "Content-Type", "value": "application/json" }
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.WHATSAPP_ACCESS_TOKEN }}" }
           ]
         },
         "sendBody": true,
         "contentType": "json",
-        "body": "={\n  \"model\": \"gpt-3.5-turbo\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a professional AI Sales Assistant for FashionHub, a clothing brand in Pakistan. Reply warmly, use emojis, keep it short and helpful. Support both English and Urdu.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"{{ $json.text }}\"\n    }\n  ],\n  \"max_tokens\": 300\n}"
+        "body": "={\n  \"messaging_product\": \"whatsapp\",\n  \"status\": \"read\",\n  \"message_id\": \"{{ $json.messageId }}\"\n}"
       },
+      "id": "wa-mark-read",
+      "name": "Mark as Read",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.OPENAI_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"model\": \"gpt-3.5-turbo\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a professional AI Sales Assistant for FashionHub, a premium clothing brand in Pakistan. Help customers with product recommendations, orders, delivery info, and after-sales support.\\n\\nProduct Catalog:\\n- Black Embroidered Maxi (Women) — Rs 4,999 | Sizes: S,M,L,XL\\n- Black Chiffon Dress (Women) — Rs 5,499 | Sizes: S,M,L\\n- Red Formal Suit (Women) — Rs 6,999 | Sizes: M,L,XL\\n- Beige Lawn Suit (Women) — Rs 3,499 | Sizes: S,M,L\\n- Floral Summer Dress (Women) — Rs 3,999 | Sizes: S,M,L\\n- White Casual Shirt (Men) — Rs 1,999 | Sizes: S,M,L,XL,XXL\\n- Navy Blue Kurta (Men) — Rs 2,499 | Sizes: M,L,XL\\n- Black Slim Jeans (Men) — Rs 2,999 | Sizes: 30,32,34,36\\n- White Sneakers — Rs 2,799 | Sizes: 39-43\\n- Leather Belt — Rs 999 | Free Size\\n\\nDelivery: 3-5 working days. Rs 150 (city), Rs 200 (other). Free delivery above Rs 5,000.\\nReturn/Exchange: 7 days, unused with tags.\\n\\nBe warm, use emojis, reply in the customer's language (English or Urdu/Roman Urdu). Keep responses concise.\"\n    },\n    { \"role\": \"user\", \"content\": \"={{ $json.text }}\" }\n  ],\n  \"max_tokens\": 300,\n  \"temperature\": 0.7\n}"
+      },
+      "id": "wa-openai-reply",
       "name": "OpenAI - Generate Reply",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [680, 380]
+      "position": [680, 420]
     },
     {
       "parameters": {
-        "jsCode": "return [{\n  json: {\n    from: $('Extract Message').first().json.from,\n    reply: $input.first().json.choices[0].message.content\n  }\n}];"
+        "jsCode": "const aiText = $input.first().json.choices?.[0]?.message?.content;\nif (!aiText) return [];\n\nreturn [{\n  json: {\n    from: $('Extract Message').first().json.from,\n    reply: aiText.trim()\n  }\n}];"
       },
+      "id": "wa-prepare-reply",
       "name": "Prepare Reply",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 380]
+      "position": [900, 420]
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -76,10 +110,11 @@
         "contentType": "json",
         "body": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.from }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $json.reply }}\" }\n}"
       },
+      "id": "wa-send-reply",
       "name": "Send WhatsApp Reply",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1120, 380]
+      "position": [1120, 420]
     }
   ],
   "connections": {
@@ -92,7 +127,12 @@
       ]
     },
     "Extract Message": {
-      "main": [[{ "node": "OpenAI - Generate Reply", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          { "node": "Mark as Read", "type": "main", "index": 0 },
+          { "node": "OpenAI - Generate Reply", "type": "main", "index": 0 }
+        ]
+      ]
     },
     "OpenAI - Generate Reply": {
       "main": [[{ "node": "Prepare Reply", "type": "main", "index": 0 }]]
@@ -101,5 +141,18 @@
       "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]]
     }
   },
-  "settings": { "executionOrder": "v1" }
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fashionhub"
+  },
+  "id": "fashionhub-whatsapp-flow",
+  "tags": ["fashionhub", "whatsapp", "ai"]
 }
