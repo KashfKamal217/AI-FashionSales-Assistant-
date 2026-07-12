@@ -1,0 +1,6 @@
+[
+  { "id": 1, "name": "Ali Ahmed", "phone": "03111234567", "instagram": "@ali_ahmed", "city": "Islamabad", "address": "G-11 Islamabad", "orders": 5, "status": "Active" },
+  { "id": 2, "name": "Sara Khan", "phone": "03001234567", "instagram": "@sarakhan", "city": "Lahore", "address": "Johar Town Lahore", "orders": 3, "status": "Active" },
+  { "id": 3, "name": "Ahmed Raza", "phone": "03331234567", "instagram": "@ahmedraza", "city": "Karachi", "address": "Clifton Karachi", "orders": 2, "status": "Blocked" },
+  { "id": 4, "name": "Fatima Noor", "phone": "03451234567", "instagram": "@fatimanoor", "city": "Rawalpindi", "address": "Saddar Rawalpindi", "orders": 8, "status": "Active" }
+]
